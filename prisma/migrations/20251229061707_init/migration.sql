@@ -1,0 +1,5 @@
+-- AlterTable
+ALTER TABLE "Product" ADD COLUMN     "breadth" DOUBLE PRECISION,
+ADD COLUMN     "height" DOUBLE PRECISION,
+ADD COLUMN     "length" DOUBLE PRECISION,
+ADD COLUMN     "weight" DOUBLE PRECISION;

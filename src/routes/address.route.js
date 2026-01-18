@@ -1,0 +1,10 @@
+import {Router} from "express";
+import authMiddleware from "../middleware/auth.middleware.js";
+import {addAddressController, getAddressesController, updateAddressController, deleteAddressController, setDefaultAddressController} from "../controllers/address.controller.js";
+const router=Router();
+router.post('/', authMiddleware, addAddressController);
+router.get('/', authMiddleware, getAddressesController);
+router.put('/', authMiddleware, updateAddressController);
+router.delete('/:addressId', authMiddleware, deleteAddressController);
+router.patch('/:addressId/default', authMiddleware, setDefaultAddressController);
+export default router;
