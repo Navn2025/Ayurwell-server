@@ -53,6 +53,7 @@ app.use(express.json());
 app.use(cookieParser());
 app.use(passport.initialize());
 
+app.set("trust proxy", 1);
 
 
 app.get("/", (req, res) =>
