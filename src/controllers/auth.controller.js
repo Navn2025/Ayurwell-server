@@ -64,10 +64,12 @@ async function registerUser(req, res)
 
         res.cookie("token", token, {
             httpOnly: true,
-            secure: process.env.NODE_ENV==="production",
+            secure: true,        // must be true on HTTPS (Render)
+            sameSite: "None",    // REQUIRED for cross-site
             maxAge: 14*24*60*60*1000,
-            sameSite: "lax"
+            path: "/",
         });
+
 
         return res.status(201).json({
             message: "User registered successfully",
@@ -104,14 +106,14 @@ async function loginUser(req, res)
             return res.status(400).json({message: "Invalid email or password"});
         }
         const token=jwt.sign({userId: user.id, email: user.email, role: user.role, firstName: user.firstName, lastName: user.lastName}, process.env.JWT_SECRET, {expiresIn: "2weeks"});
-        res.cookie("token", token,
-            {
-                httpOnly: true,
-                secure: process.env.NODE_ENV==="production",
-                maxAge: 14*24*60*60*1000,
-                sameSite: "lax"
-            }
-        ); // 2 weeks
+        res.cookie("token", token, {
+            httpOnly: true,
+            secure: true,        // must be true on HTTPS (Render)
+            sameSite: "None",    // REQUIRED for cross-site
+            maxAge: 14*24*60*60*1000,
+            path: "/",
+        });
+        // 2 weeks
         return res.status(200).json({
             message: "Login successful",
             user: {
@@ -321,9 +323,12 @@ async function updateUser(req, res)
 
     res.cookie("token", token, {
         httpOnly: true,
-        secure: process.env.NODE_ENV==="production",
-        maxAge: 14*24*60*60*1000
+        secure: true,        // must be true on HTTPS (Render)
+        sameSite: "None",    // REQUIRED for cross-site
+        maxAge: 14*24*60*60*1000,
+        path: "/",
     });
+
 
     return res.json({message: "User updated successfully", userId: user.id});
 }
