@@ -24,10 +24,41 @@ export const REFUND_TYPES={
 };
 
 /* ══════════════════════════════════════════════════════════════════
+   HELPER FUNCTION: Validate Razorpay Payment
+   ══════════════════════════════════════════════════════════════════ */
+async function validateRazorpayPayment(razorpayPaymentId) {
+    try {
+        const payment = await razorpay.payments.fetch(razorpayPaymentId);
+        console.log("Razorpay payment validation:", {
+            id: payment.id,
+            status: payment.status,
+            amount: payment.amount,
+            currency: payment.currency,
+            captured: payment.captured,
+            refunded: payment.refunded,
+            refund_amount: payment.refund_amount
+        });
+        
+        if (payment.status !== 'captured') {
+            throw new Error(`Payment not captured. Current status: ${payment.status}`);
+        }
+        
+        if (payment.refunded) {
+            throw new Error(`Payment already refunded. Refund amount: ${payment.refund_amount}`);
+        }
+        
+        return payment;
+    } catch (error) {
+        console.error("Payment validation failed:", error);
+        throw new Error(`Invalid Razorpay payment: ${error.message}`);
+    }
+}
+
+/* ══════════════════════════════════════════════════════════════════
    1️⃣ CANCEL ORDER BEFORE SHIPMENT (PREPAID + COD)
    - Full refund for prepaid orders
    - No refund needed for COD
-══════════════════════════════════════════════════════════════════ */
+   ══════════════════════════════════════════════════════════════════ */
 export async function cancelOrderBeforeShipment(orderId, userId, role)
 {
     const order=await prisma.order.findUnique({
@@ -105,11 +136,37 @@ export async function cancelOrderBeforeShipment(orderId, userId, role)
                 },
             });
 
-            try
+try
             {
                 // Convert amount from rupees to paise for Razorpay
                 // order.totalAmount is in rupees, payment.amount is also in rupees
                 const amountInPaise=Math.round(order.totalAmount*100);
+
+                // Log request details for debugging
+                console.log("Razorpay refund request:", {
+                    paymentId: order.payment.razorpayPaymentId,
+                    amount: amountInPaise,
+                    orderId: order.orderNumber,
+                    paymentStatus: order.payment.status,
+                    originalAmount: order.totalAmount,
+                    timestamp: new Date().toISOString(),
+                    userId: userId
+                });
+
+// Validate request parameters
+                if (!order.payment.razorpayPaymentId || order.payment.razorpayPaymentId.trim() === '') {
+                    throw new Error("Razorpay payment ID is missing or empty");
+                }
+
+                if (amountInPaise <= 0) {
+                    throw new Error(`Invalid refund amount: ${amountInPaise} paise`);
+                }
+
+                // Validate payment with Razorpay and check amount
+                const originalPayment = await validateRazorpayPayment(order.payment.razorpayPaymentId);
+                if (amountInPaise > originalPayment.amount) {
+                    throw new Error(`Refund amount (${amountInPaise} paise) exceeds original payment amount (${originalPayment.amount} paise)`);
+                }
 
                 // Call Razorpay refund API
                 const razorpayRefund=await razorpay.payments.refund(
@@ -208,9 +265,18 @@ export async function cancelOrderBeforeShipment(orderId, userId, role)
                     amount: order.totalAmount,
                 };
             }
-            catch (error)
+catch (error)
             {
-                console.log("Full Razorpay error:", error);
+                console.log("Full Razorpay error:", JSON.stringify(error, null, 2));
+                console.log("Error details:", {
+                    statusCode: error?.statusCode,
+                    errorCode: error?.error?.code,
+                    errorDescription: error?.error?.description,
+                    errorReason: error?.error?.reason,
+                    paymentId: order.payment.razorpayPaymentId,
+                    amount: Math.round(order.totalAmount*100),
+                    orderId: order.orderNumber
+                });
 
                 const razorMsg=
                     error?.error?.description||
@@ -218,11 +284,19 @@ export async function cancelOrderBeforeShipment(orderId, userId, role)
                     error?.message||
                     "Unknown Razorpay error";
 
-                // Mark refund as failed
+                // Mark refund as failed with detailed error
                 await prisma.refund.update({
                     where: {id: refundRecord.id},
-                    data: {status: "FAILED"},
+                    data: {
+                        status: "FAILED",
+                        // You might want to add an errorDetails field to the schema
+                    },
                 });
+
+                // Provide more specific error message
+                if (error?.error?.code === 'BAD_REQUEST_ERROR') {
+                    throw new Error(`Razorpay refund failed: Invalid request parameters. Payment ID: ${order.payment.razorpayPaymentId}, Amount: ${Math.round(order.totalAmount*100)} paise. Error: ${razorMsg}`);
+                }
 
                 throw new Error(`Razorpay refund failed: ${razorMsg}`);
             }

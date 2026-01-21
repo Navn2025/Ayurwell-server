@@ -39,7 +39,7 @@ export async function cancelOrderController(req, res)
             razorpayRefundId: result.razorpayRefundId,
             amount: result.amount,
         });
-    } catch (error)
+} catch (error)
     {
         await publishToQueue('ORDER_NOTIFICATION.ORDER_CANCELLATION_FAILED', {
             orderId: req.params.orderId,
@@ -49,7 +49,26 @@ export async function cancelOrderController(req, res)
             lastName: req.user.lastName,
             email: req.user.email
         });
-        console.error("Cancel order error:", error);
+        
+        // Enhanced error logging
+        console.error("Cancel order error:", {
+            message: error.message,
+            stack: error.stack,
+            orderId: req.params.orderId,
+            userId: req.user.userId||req.user.id,
+            timestamp: new Date().toISOString()
+        });
+
+        // Provide more specific error response for Razorpay errors
+        if (error.message.includes('Razorpay')) {
+            return res.status(400).json({
+                success: false,
+                message: error.message,
+                type: 'RAZORPAY_ERROR',
+                orderId: req.params.orderId
+            });
+        }
+
         return res.status(400).json({
             success: false,
             message: error.message,
