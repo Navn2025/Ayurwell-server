@@ -24,6 +24,7 @@ export async function cancelOrderController(req, res)
         const role=req.user.role;
 
         const result=await cancelOrderBeforeShipment(orderId, userId, role);
+        console.log(result);
         await publishToQueue('ORDER_NOTIFICATION.ORDER_CANCELLED', {
             orderId: orderId,
             userId: userId,
@@ -39,7 +40,7 @@ export async function cancelOrderController(req, res)
             razorpayRefundId: result.razorpayRefundId,
             amount: result.amount,
         });
-} catch (error)
+    } catch (error)
     {
         await publishToQueue('ORDER_NOTIFICATION.ORDER_CANCELLATION_FAILED', {
             orderId: req.params.orderId,
@@ -49,7 +50,7 @@ export async function cancelOrderController(req, res)
             lastName: req.user.lastName,
             email: req.user.email
         });
-        
+
         // Enhanced error logging
         console.error("Cancel order error:", {
             message: error.message,
@@ -60,7 +61,8 @@ export async function cancelOrderController(req, res)
         });
 
         // Provide more specific error response for Razorpay errors
-        if (error.message.includes('Razorpay')) {
+        if (error.message.includes('Razorpay'))
+        {
             return res.status(400).json({
                 success: false,
                 message: error.message,
