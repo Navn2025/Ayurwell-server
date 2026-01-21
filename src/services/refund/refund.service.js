@@ -202,16 +202,26 @@ export async function cancelOrderBeforeShipment(orderId, userId, role)
                     razorpayRefundId: razorpayRefund.id,
                     amount: order.totalAmount,
                 };
-            } catch (error)
+            }
+            catch (error)
             {
+                console.log("Full Razorpay error:", error);
+
+                const razorMsg=
+                    error?.error?.description||
+                    error?.error?.message||
+                    error?.message||
+                    "Unknown Razorpay error";
+
                 // Mark refund as failed
                 await prisma.refund.update({
                     where: {id: refundRecord.id},
                     data: {status: "FAILED"},
                 });
 
-                throw new Error(`Razorpay refund failed: ${error.message}`);
+                throw new Error(`Razorpay refund failed: ${razorMsg}`);
             }
+
         }
         else
         {
