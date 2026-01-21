@@ -6,23 +6,23 @@ export async function addReview(req, res)
     {
         const {productId, rating, comment}=req.body;
         const userId=req.user.userId;
-        // const existingOrder=await prisma.order.findFirst({
-        //     where: {
-        //         userId,
-        //         items: {
-        //             some: {
-        //                 productId
-        //             }
-        //         },
-        //         status: "DELIVERED"
-        //     }
-        // });
-        // if (!existingOrder)
-        // {
-        //     return res.status(400).json({
-        //         message: "You can only review products you have purchased and received."
-        //     });
-        // }
+        const existingOrder=await prisma.order.findFirst({
+            where: {
+                userId,
+                items: {
+                    some: {
+                        productId
+                    }
+                },
+                status: "DELIVERED"
+            }
+        });
+        if (!existingOrder)
+        {
+            return res.status(400).json({
+                message: "You can only review products you have purchased and received."
+            });
+        }
         if (rating<1||rating>5)
         {
             return res.status(400).json({
