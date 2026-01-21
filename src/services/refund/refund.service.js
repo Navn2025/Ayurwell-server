@@ -227,17 +227,39 @@ export async function cancelOrderBeforeShipment(orderId, userId, role)
                 });
 
                 // Call Razorpay refund API
-                const razorpayRefund=await razorpay.payments.refund(
-                    order.payment.razorpayPaymentId,
-                    {
-                        amount: actualRefundAmount, // Amount in paise
-                        speed: "normal",
-                        notes: {
-                            order_id: order.orderNumber,
-                            reason: "Order cancelled before shipment",
+                let razorpayRefund;
+                try
+                {
+                    razorpayRefund=await razorpay.payments.refund(
+                        order.payment.razorpayPaymentId,
+                        {
+                            amount: actualRefundAmount, // Amount in paise
+                            speed: "normal",
+                            notes: {
+                                order_id: order.orderNumber,
+                                reason: "Order cancelled before shipment",
+                            },
+                        }
+                    );
+                } catch (apiError)
+                {
+                    console.error("Razorpay refund API error:", {
+                        paymentId: order.payment.razorpayPaymentId,
+                        amount: actualRefundAmount,
+                        orderId: order.orderNumber,
+                        requestPayload: {
+                            amount: actualRefundAmount,
+                            speed: "normal",
+                            notes: {
+                                order_id: order.orderNumber,
+                                reason: "Order cancelled before shipment",
+                            },
                         },
-                    }
-                );
+                        error: apiError,
+                        errorString: JSON.stringify(apiError, null, 2)
+                    });
+                    throw apiError;
+                }
 
                 // Update in transaction
                 await prisma.$transaction(async (tx) =>
