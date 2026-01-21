@@ -72,9 +72,14 @@ export async function cancelOrderBeforeShipment(orderId, userId, role)
     ────────────────────────────── */
     if (order.paymentMethod==="PREPAID")
     {
-        // If payment exists and is CAPTURED, process refund
+// If payment exists and is CAPTURED, process refund
         if (order.payment&&order.payment.status==="CAPTURED")
         {
+            // Verify razorpayPaymentId exists
+            if (!order.payment.razorpayPaymentId) {
+                throw new Error("Cannot process refund: Razorpay payment ID not found");
+            }
+
             // Check for existing refund
             const existingRefund=await prisma.refund.findFirst({
                 where: {
@@ -388,10 +393,25 @@ export async function processRTORefund(orderId)
         return {success: true, message: "COD RTO processed", refundId: null};
     }
 
-    // Validate payment
+// Validate payment
     if (!order.payment||order.payment.status!=="CAPTURED")
     {
         throw new Error("Payment not captured");
+    }
+
+    // Verify razorpayPaymentId exists
+    if (!order.payment.razorpayPaymentId) {
+        throw new Error("Cannot process refund: Razorpay payment ID not found");
+    }
+
+    // Verify razorpayPaymentId exists
+    if (!order.payment.razorpayPaymentId) {
+        throw new Error("Cannot process refund: Razorpay payment ID not found");
+    }
+
+    // Verify razorpayPaymentId exists
+    if (!order.payment.razorpayPaymentId) {
+        throw new Error("Cannot process refund: Razorpay payment ID not found");
     }
 
     // Check RTO status
@@ -920,8 +940,13 @@ export async function retryFailedRefund(refundId)
         throw new Error("Only failed refunds can be retried");
     }
 
-    const payment=refund.payment;
+const payment=refund.payment;
     const order=payment.order;
+
+    // Verify razorpayPaymentId exists
+    if (!payment.razorpayPaymentId) {
+        throw new Error("Cannot retry refund: Razorpay payment ID not found");
+    }
 
     try
     {
