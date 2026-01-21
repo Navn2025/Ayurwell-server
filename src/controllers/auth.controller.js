@@ -159,7 +159,7 @@ async function googleAuth(req, res)
             {
                 httpOnly: true,
                 secure: process.env.NODE_ENV==="production",
-                sameSite: "lax",
+                sameSite: "None",
                 maxAge: 14*24*60*60*1000
             }
         );
