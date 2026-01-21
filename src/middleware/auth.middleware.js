@@ -7,6 +7,7 @@ async function authMiddleware(req, res, next)
         (authHeader&&authHeader.startsWith("Bearer ")
             ? authHeader.split(" ")[1]
             :null);
+    console.log(token);
     if (!token)
     {
         return res.status(401).json({

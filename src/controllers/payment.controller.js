@@ -1,5 +1,6 @@
 import prisma from "../db/db.js";
 
+
 async function getAllPayments(req, res)
 {
     try
