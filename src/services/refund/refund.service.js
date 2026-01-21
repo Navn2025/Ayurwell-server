@@ -168,389 +168,15 @@ try
                     throw new Error(`Refund amount (${amountInPaise} paise) exceeds original payment amount (${originalPayment.amount} paise)`);
                 }
 
-                // Call Razorpay refund API
-                const razorpayRefund=await razorpay.payments.refund(
-                    order.payment.razorpayPaymentId,
-                    {
-                        amount: amountInPaise, // Full amount in paise
-                        speed: "normal",
-                        notes: {
-                            order_id: order.orderNumber,
-                            reason: "Order cancelled before shipment",
-                        },
-                    }
-                );
-
-                // Update everything in transaction
-                await prisma.$transaction(async (tx) =>
-                {
-                    // Update refund with Razorpay ID
-                    await tx.refund.update({
-                        where: {id: refundRecord.id},
-                        data: {
-                            razorpayRefundId: razorpayRefund.id,
-                            status: "PROCESSING", // Will be SUCCESS via webhook
-                        },
-                    });
-
-                    // Update payment
-                    await tx.payment.update({
-                        where: {id: order.payment.id},
-                        data: {
-                            refundedAmount: order.totalAmount,
-                            status: "REFUNDED",
-                        },
-                    });
-
-                    // Update order status
-                    await tx.order.update({
-                        where: {id: order.id},
-                        data: {status: "REFUNDED"},
-                    });
-
-                    // Cancel shipment if exists
-                    if (order.shipment)
-                    {
-                        await tx.shipment.update({
-                            where: {id: order.shipment.id},
-                            data: {status: "CANCELLED"},
-                        });
-                    }
-
-                    // Restore stock
-                    const orderItems=await tx.orderItem.findMany({
-                        where: {orderId: order.id},
-                    });
-
-                    for (const item of orderItems)
-                    {
-                        await tx.product.update({
-                            where: {id: item.productId},
-                            data: {
-                                stockQuantity: {increment: item.quantity},
-                            },
-                        });
-                    }
-
-                    // Add status history
-                    await tx.orderStatusHistory.create({
-                        data: {
-                            orderId: order.id,
-                            status: "REFUNDED",
-                            note: `Order cancelled. Full refund of ₹${order.totalAmount} initiated.`,
-                        },
-                    });
-                });
-
-                // Send email notification
-                try
-                {
-                    await publishToQueue("REFUND.INITIATED", {
-                        email: order.user.email,
-                        firstName: order.user.firstName,
-                        orderNumber: order.orderNumber,
-                        amount: order.totalAmount,
+// Call Razorpay refund API
+                const razorpayRefund=await razorpay.payments.refund(order.payment.razorpayPaymentId, {
+                    amount: amountInPaise.toString(), // Full amount in paise as string
+                    speed: "normal",
+                    notes: {
+                        order_id: order.orderNumber,
                         reason: "Order cancelled before shipment",
-                    });
-                } catch (emailError)
-                {
-                    console.error("Email notification failed:", emailError);
-                }
-
-                return {
-                    success: true,
-                    message: "Order cancelled and refund initiated",
-                    refundId: refundRecord.id,
-                    razorpayRefundId: razorpayRefund.id,
-                    amount: order.totalAmount,
-                };
-            }
-catch (error)
-            {
-                console.log("Full Razorpay error:", JSON.stringify(error, null, 2));
-                console.log("Error details:", {
-                    statusCode: error?.statusCode,
-                    errorCode: error?.error?.code,
-                    errorDescription: error?.error?.description,
-                    errorReason: error?.error?.reason,
-                    paymentId: order.payment.razorpayPaymentId,
-                    amount: Math.round(order.totalAmount*100),
-                    orderId: order.orderNumber
-                });
-
-                const razorMsg=
-                    error?.error?.description||
-                    error?.error?.message||
-                    error?.message||
-                    "Unknown Razorpay error";
-
-                // Mark refund as failed with detailed error
-                await prisma.refund.update({
-                    where: {id: refundRecord.id},
-                    data: {
-                        status: "FAILED",
-                        // You might want to add an errorDetails field to the schema
                     },
                 });
-
-                // Provide more specific error message
-                if (error?.error?.code === 'BAD_REQUEST_ERROR') {
-                    throw new Error(`Razorpay refund failed: Invalid request parameters. Payment ID: ${order.payment.razorpayPaymentId}, Amount: ${Math.round(order.totalAmount*100)} paise. Error: ${razorMsg}`);
-                }
-
-                throw new Error(`Razorpay refund failed: ${razorMsg}`);
-            }
-
-        }
-        else
-        {
-            // Payment not captured or doesn't exist - just cancel order without refund
-            await prisma.$transaction(async (tx) =>
-            {
-                await tx.order.update({
-                    where: {id: order.id},
-                    data: {status: "CANCELLED"},
-                });
-
-                // Cancel shipment if exists
-                if (order.shipment)
-                {
-                    await tx.shipment.update({
-                        where: {id: order.shipment.id},
-                        data: {status: "CANCELLED"},
-                    });
-                }
-
-                // Restore stock
-                const orderItems=await tx.orderItem.findMany({
-                    where: {orderId: order.id},
-                });
-
-                for (const item of orderItems)
-                {
-                    await tx.product.update({
-                        where: {id: item.productId},
-                        data: {
-                            stockQuantity: {increment: item.quantity},
-                        },
-                    });
-                }
-
-                await tx.orderStatusHistory.create({
-                    data: {
-                        orderId: order.id,
-                        status: "CANCELLED",
-                        note: order.payment
-                            ? `Prepaid order cancelled. Payment status: ${order.payment.status}. No refund needed.`
-                            :"Prepaid order cancelled. Payment not initiated. No refund needed.",
-                    },
-                });
-            });
-
-            return {
-                success: true,
-                message: "Prepaid order cancelled successfully. No refund needed as payment was not captured.",
-                refundId: null,
-                amount: 0,
-            };
-        }
-    }
-
-    /* ──────────────────────────────
-       COD ORDER - No Refund Needed
-    ────────────────────────────── */
-    await prisma.$transaction(async (tx) =>
-    {
-        await tx.order.update({
-            where: {id: order.id},
-            data: {status: "CANCELLED"},
-        });
-
-        // Cancel shipment if exists
-        if (order.shipment)
-        {
-            await tx.shipment.update({
-                where: {id: order.shipment.id},
-                data: {status: "CANCELLED"},
-            });
-        }
-
-        // Restore stock
-        const orderItems=await tx.orderItem.findMany({
-            where: {orderId: order.id},
-        });
-
-        for (const item of orderItems)
-        {
-            await tx.product.update({
-                where: {id: item.productId},
-                data: {
-                    stockQuantity: {increment: item.quantity},
-                },
-            });
-        }
-
-        await tx.orderStatusHistory.create({
-            data: {
-                orderId: order.id,
-                status: "CANCELLED",
-                note: "COD order cancelled before shipment",
-            },
-        });
-    });
-
-    return {
-        success: true,
-        message: "COD order cancelled successfully",
-        refundId: null,
-        amount: 0,
-    };
-}
-
-/* ══════════════════════════════════════════════════════════════════
-   2️⃣ RTO DELIVERED REFUND (Return to Origin)
-   - Only for PREPAID orders
-   - Full refund when product returns to warehouse
-══════════════════════════════════════════════════════════════════ */
-export async function processRTORefund(orderId)
-{
-    const order=await prisma.order.findUnique({
-        where: {id: orderId},
-        include: {
-            payment: true,
-            shipment: true,
-            user: true,
-            returns: true,
-        },
-    });
-
-    if (!order)
-    {
-        throw new Error("Order not found");
-    }
-
-    // Only prepaid orders need refund
-    if (order.paymentMethod!=="PREPAID")
-    {
-        // COD RTO - just update status, no refund needed
-        await prisma.$transaction(async (tx) =>
-        {
-            await tx.order.update({
-                where: {id: order.id},
-                data: {status: "CANCELLED"},
-            });
-
-            // Restore stock
-            const orderItems=await tx.orderItem.findMany({
-                where: {orderId: order.id},
-            });
-
-            for (const item of orderItems)
-            {
-                await tx.product.update({
-                    where: {id: item.productId},
-                    data: {
-                        stockQuantity: {increment: item.quantity},
-                    },
-                });
-            }
-
-            await tx.orderStatusHistory.create({
-                data: {
-                    orderId: order.id,
-                    status: "CANCELLED",
-                    note: "COD order - RTO completed, no refund needed",
-                },
-            });
-        });
-
-        return {success: true, message: "COD RTO processed", refundId: null};
-    }
-
-// Validate payment
-    if (!order.payment||order.payment.status!=="CAPTURED")
-    {
-        throw new Error("Payment not captured");
-    }
-
-    // Verify razorpayPaymentId exists
-    if (!order.payment.razorpayPaymentId) {
-        throw new Error("Cannot process refund: Razorpay payment ID not found");
-    }
-
-    // Verify razorpayPaymentId exists
-    if (!order.payment.razorpayPaymentId) {
-        throw new Error("Cannot process refund: Razorpay payment ID not found");
-    }
-
-    // Verify razorpayPaymentId exists
-    if (!order.payment.razorpayPaymentId) {
-        throw new Error("Cannot process refund: Razorpay payment ID not found");
-    }
-
-    // Check RTO status
-    if (!order.shipment||order.shipment.status!=="RTO_DELIVERED")
-    {
-        throw new Error("RTO not yet delivered");
-    }
-
-    // Idempotency check
-    const existingRefund=await prisma.refund.findFirst({
-        where: {
-            paymentId: order.payment.id,
-            status: {in: ["INITIATED", "PROCESSING", "SUCCESS"]},
-        },
-    });
-
-    if (existingRefund)
-    {
-        return existingRefund;
-    }
-
-    // Create or get Return record
-    let returnRecord=order.returns.find((r) => r.status!=="CANCELLED");
-    if (!returnRecord)
-    {
-        returnRecord=await prisma.return.create({
-            data: {
-                orderId: order.id,
-                reason: "RTO - Return to Origin",
-                status: "COMPLETED",
-                shipmentId: order.shipment.id,
-            },
-        });
-    }
-
-    // Create refund record
-    const refundRecord=await prisma.refund.create({
-        data: {
-            paymentId: order.payment.id,
-            returnId: returnRecord.id,
-            amount: order.totalAmount, // Full refund
-            type: REFUND_TYPES.RTO,
-            reason: "RTO - Product returned to warehouse",
-            mode: "ORIGINAL",
-            status: "INITIATED",
-        },
-    });
-
-    try
-    {
-        // Convert amount from rupees to paise for Razorpay
-        const amountInPaise=Math.round(order.totalAmount*100);
-
-        // Call Razorpay
-        const razorpayRefund=await razorpay.payments.refund(
-            order.payment.razorpayPaymentId,
-            {
-                amount: amountInPaise,
-                speed: "normal",
-                notes: {
-                    order_id: order.orderNumber,
-                    reason: "RTO Delivered",
-                },
-            }
-        );
 
         // Update in transaction
         await prisma.$transaction(async (tx) =>
@@ -705,18 +331,15 @@ export async function processCustomerReturnRefund(returnId)
         // Convert amount from rupees to paise for Razorpay
         const amountInPaise=Math.round(order.totalAmount*100);
 
-        const razorpayRefund=await razorpay.payments.refund(
-            order.payment.razorpayPaymentId,
-            {
-                amount: amountInPaise,
-                speed: "normal",
-                notes: {
-                    order_id: order.orderNumber,
-                    return_id: returnRecord.id,
-                    reason: returnRecord.reason,
-                },
-            }
-        );
+const razorpayRefund=await razorpay.payments.refund(order.payment.razorpayPaymentId, {
+            amount: amountInPaise.toString(),
+            speed: "normal",
+            notes: {
+                order_id: order.orderNumber,
+                return_id: returnRecord.id,
+                reason: returnRecord.reason,
+            },
+        });
 
         await prisma.$transaction(async (tx) =>
         {
@@ -876,18 +499,15 @@ export async function processAdminRefund(orderId, reason, adminId)
         // Convert amount from rupees to paise for Razorpay
         const amountInPaise=Math.round(order.totalAmount*100);
 
-        const razorpayRefund=await razorpay.payments.refund(
-            order.payment.razorpayPaymentId,
-            {
-                amount: amountInPaise,
-                speed: "normal",
-                notes: {
-                    order_id: order.orderNumber,
-                    admin_id: adminId,
-                    reason: reason,
-                },
-            }
-        );
+const razorpayRefund=await razorpay.payments.refund(order.payment.razorpayPaymentId, {
+            amount: amountInPaise.toString(),
+            speed: "normal",
+            notes: {
+                order_id: order.orderNumber,
+                admin_id: adminId,
+                reason: reason,
+            },
+        });
 
         await prisma.$transaction(async (tx) =>
         {
@@ -1024,17 +644,14 @@ const payment=refund.payment;
 
     try
     {
-        const razorpayRefund=await razorpay.payments.refund(
-            payment.razorpayPaymentId,
-            {
-                amount: refund.amount,
-                speed: "normal",
-                notes: {
-                    order_id: order.orderNumber,
-                    retry: "true",
-                },
-            }
-        );
+const razorpayRefund=await razorpay.payments.refund(payment.razorpayPaymentId, {
+            amount: Math.round(refund.amount * 100).toString(), // Convert to paise and string
+            speed: "normal",
+            notes: {
+                order_id: order.orderNumber,
+                retry: "true",
+            },
+        });
 
         await prisma.$transaction(async (tx) =>
         {
