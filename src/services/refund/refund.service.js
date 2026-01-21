@@ -227,39 +227,17 @@ export async function cancelOrderBeforeShipment(orderId, userId, role)
                 });
 
                 // Call Razorpay refund API
-                let razorpayRefund;
-                try
-                {
-                    razorpayRefund=await razorpay.payments.refund(
-                        order.payment.razorpayPaymentId,
-                        {
-                            amount: actualRefundAmount, // Amount in paise
-                            speed: "normal",
-                            notes: {
-                                order_id: order.orderNumber,
-                                reason: "Order cancelled before shipment",
-                            },
-                        }
-                    );
-                } catch (apiError)
-                {
-                    console.error("Razorpay refund API error:", {
-                        paymentId: order.payment.razorpayPaymentId,
-                        amount: actualRefundAmount,
-                        orderId: order.orderNumber,
-                        requestPayload: {
-                            amount: actualRefundAmount,
-                            speed: "normal",
-                            notes: {
-                                order_id: order.orderNumber,
-                                reason: "Order cancelled before shipment",
-                            },
+                // CRITICAL: Razorpay expects amount as integer (number type, not string)
+                const razorpayRefund=await razorpay.payments.refund(
+                    order.payment.razorpayPaymentId,
+                    {
+                        amount: parseInt(actualRefundAmount), // Must be integer number type
+                        notes: {
+                            order_id: order.orderNumber,
+                            reason: "Order cancelled before shipment",
                         },
-                        error: apiError,
-                        errorString: JSON.stringify(apiError, null, 2)
-                    });
-                    throw apiError;
-                }
+                    }
+                );
 
                 // Update in transaction
                 await prisma.$transaction(async (tx) =>
@@ -602,8 +580,7 @@ export async function processCustomerReturnRefund(returnId)
     try
     {
         const razorpayRefund=await razorpay.payments.refund(order.payment.razorpayPaymentId, {
-            amount: actualRefundAmount,
-            speed: "normal",
+            amount: parseInt(actualRefundAmount),
             notes: {
                 order_id: order.orderNumber,
                 return_id: returnRecord.id,
@@ -763,8 +740,7 @@ export async function processAdminRefund(orderId, reason, adminId)
     try
     {
         const razorpayRefund=await razorpay.payments.refund(order.payment.razorpayPaymentId, {
-            amount: actualRefundAmount,
-            speed: "normal",
+            amount: parseInt(actualRefundAmount),
             notes: {
                 order_id: order.orderNumber,
                 admin_id: adminId,
@@ -907,8 +883,7 @@ export async function retryFailedRefund(refundId)
         const actualRefundAmount=Math.min(refundableAmount, requestedAmountInPaise);
 
         const razorpayRefund=await razorpay.payments.refund(payment.razorpayPaymentId, {
-            amount: actualRefundAmount,
-            speed: "normal",
+            amount: parseInt(actualRefundAmount),
             notes: {
                 order_id: order.orderNumber,
                 retry: "true",
