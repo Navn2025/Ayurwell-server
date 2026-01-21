@@ -318,7 +318,8 @@ export async function cancelOrderBeforeShipment(orderId, userId, role)
                     data: {status: "FAILED"},
                 });
 
-                throw new Error(`Cancellation refund failed: ${error.message}`);
+                const errorMessage = error?.error?.description || error?.error?.message || error?.message || error?.toString() || "Unknown refund error";
+                throw new Error(`Cancellation refund failed: ${errorMessage}`);
             }
         }
     }
