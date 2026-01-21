@@ -4,6 +4,7 @@ import {selectCourier} from "../services/shiprocket/shiprocket.courier.selector.
 import {getCourierOptions} from "../services/shiprocket/shiprocket.transportation.service.js";
 import {generateToken} from "../services/shiprocket/shiprocket.token.service.js";
 import {publishToQueue} from "../broker/borker.js";
+import {cancelOrderBeforeShipment} from "../services/refund/refund.service.js";
 async function createOrderForAllCartProducts(req, res)
 {
     try
@@ -776,37 +777,26 @@ async function cancelOrder(req, res)
     try
     {
         const {orderId}=req.params;
+        const userId=req.user.userId||req.user.id;
+        const role=req.user.role;
 
-        const order=await prisma.order.findUnique({
-            where: {id: orderId},
-        });
-        if (!order)
-        {
-            return res.status(404).json({message: "Order not found"});
-        }
-        if (order.status==="CANCELLED")
-        {
-            return res.status(400).json({message: "Order is already cancelled"});
-        }
-        if (order.status==="SHIPPED"||order.status==="DELIVERED"||order.status==="FAILED")
-        {
-            return res.status(400).json({message: `Cannot cancel order with status ${order.status}`});
-        }
-        const cancelledOrder=await prisma.order.update({
-            where: {id: orderId},
-            data: {status: "CANCELLED"}
-        });
+        // Use the proper refund service that handles both COD and PREPAID orders
+        const result=await cancelOrderBeforeShipment(orderId, userId, role);
+
         await publishToQueue('ORDER_NOTIFICATION.ORDER_CANCELLED', {
-            orderId: cancelledOrder.id,
-            userId: cancelledOrder.userId,
-            email: req.user.email,
+            orderId: orderId,
+            userId: userId,
             firstName: req.user.firstName,
-            lastName: req.user.lastName
-
+            lastName: req.user.lastName,
+            email: req.user.email
         });
+
         return res.status(200).json({
-            message: "Order cancelled successfully",
-            cancelledOrder
+            success: true,
+            message: result.message,
+            refundId: result.refundId,
+            razorpayRefundId: result.razorpayRefundId,
+            amount: result.amount,
         });
     }
     catch (error)
@@ -815,13 +805,34 @@ async function cancelOrder(req, res)
             orderId: req.params.orderId,
             userId: req.user.userId||req.user.id,
             error: error.message,
-            email: req.user.email,
             firstName: req.user.firstName,
-            lastName: req.user.lastName
+            lastName: req.user.lastName,
+            email: req.user.email
+        });
+
+        console.error("Cancel order error:", {
+            message: error.message,
+            stack: error.stack,
+            orderId: req.params.orderId,
+            userId: req.user.userId||req.user.id,
+            timestamp: new Date().toISOString()
+        });
+
+        // Provide more specific error response for Razorpay errors
+        if (error.message.includes('Razorpay'))
+        {
+            return res.status(400).json({
+                success: false,
+                message: error.message,
+                type: 'RAZORPAY_ERROR',
+                orderId: req.params.orderId
+            });
         }
-        )
-        console.error("Error cancelling order:", error);
-        return res.status(500).json({message: "Internal server error"});
+
+        return res.status(400).json({
+            success: false,
+            message: error.message,
+        });
     }
 }
 export

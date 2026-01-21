@@ -1,6 +1,5 @@
 import {Router} from "express";
-import {createOrderForAllCartProducts, createOrderForProduct, getAllOrders, getAllOrdersByCategory, getOrderById, getOrderByStatus, updateOrderStatus} from '../controllers/order.controller.js';
-import {cancelOrderController} from '../controllers/refund.controller.js';
+import {createOrderForAllCartProducts, createOrderForProduct, getAllOrders, getAllOrdersByCategory, getOrderById, getOrderByStatus, updateOrderStatus, cancelOrder} from '../controllers/order.controller.js';
 import authMiddleware from "../middleware/auth.middleware.js";
 import assertAdmin from "../middleware/role.middleware.js";
 const router=Router()
@@ -11,7 +10,7 @@ router.get('/category/:categoryId', authMiddleware, getAllOrdersByCategory);
 router.get('/:orderId', authMiddleware, getOrderById);
 router.get('/status/:status', authMiddleware, getOrderByStatus);
 router.put('/update/status/:orderId', authMiddleware, assertAdmin, updateOrderStatus);
-router.put('/cancel/:orderId', authMiddleware, cancelOrderController);
+router.put('/cancel/:orderId', authMiddleware, cancelOrder);
 
 export default router
 
