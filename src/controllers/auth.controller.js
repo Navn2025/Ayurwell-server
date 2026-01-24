@@ -65,7 +65,7 @@ async function registerUser(req, res)
         res.cookie("token", token, {
             httpOnly: true,
             secure: true,        // must be true on HTTPS (Render)
-            sameSite: "Lax",    // REQUIRED for cross-site
+            sameSite: "None",    // REQUIRED for cross-site
             maxAge: 14*24*60*60*1000,
             path: "/",
         });
@@ -109,7 +109,7 @@ async function loginUser(req, res)
         res.cookie("token", token, {
             httpOnly: true,
             secure: true,        // must be true on HTTPS (Render)
-            sameSite: "Lax",    // REQUIRED for cross-site
+            sameSite: "None",    // REQUIRED for cross-site
             maxAge: 14*24*60*60*1000,
             path: "/",
         });
@@ -159,7 +159,7 @@ async function googleAuth(req, res)
             {
                 httpOnly: true,
                 secure: process.env.NODE_ENV==="production",
-                sameSite: "Lax",
+                sameSite: "None",
                 maxAge: 14*24*60*60*1000
             }
         );
